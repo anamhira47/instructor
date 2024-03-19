@@ -6,7 +6,7 @@ from instructor.dsl.iterable import IterableBase, IterableModel
 from instructor.dsl.parallel import ParallelBase, ParallelModel, handle_parallel_model
 from instructor.dsl.partial import PartialBase
 from instructor.dsl.simple_type import AdapterBase, ModelAdapter, is_simple_type
-from instructor.function_calls import OpenAISchema, openai_schema
+from instructor.function_calls import OpenAISchema, openai_schema, openai_schema_from_json
 
 from openai.types.chat import ChatCompletion
 from pydantic import BaseModel
@@ -163,6 +163,8 @@ def process_response(
     if isinstance(model, AdapterBase):
         logger.debug(f"Returning model from AdapterBase")
         return model.content
+    if isinstance(model, str):
+        return model
 
     model._raw_response = response
     return model
@@ -211,9 +213,12 @@ def handle_response_model(
         if get_origin(response_model) is Iterable:
             iterable_element_class = get_args(response_model)[0]
             response_model = IterableModel(iterable_element_class)
-        if not issubclass(response_model, OpenAISchema):
+        if isinstance(response_model, dict):
+            logger.info("Response model is a dict, creating OpenAISchema from it")
+            response_model = openai_schema_from_json(response_model)
+        elif not issubclass(response_model, OpenAISchema):
             response_model = openai_schema(response_model)  # type: ignore
-
+        
         if new_kwargs.get("stream", False) and not issubclass(
             response_model, (IterableBase, PartialBase)
         ):
@@ -288,9 +293,7 @@ def handle_response_model(
         f"Instructor Request: {mode.value=}, {response_model=}, {new_kwargs=}",
         extra={
             "mode": mode.value,
-            "response_model": response_model.__name__
-            if response_model is not None
-            else None,
+            "response_model": getattr(response_model, '__name__', getattr(response_model, 'name', None)) if response_model is not None else None,
             "new_kwargs": new_kwargs,
         },
     )

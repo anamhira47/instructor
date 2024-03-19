@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Type, TypeVar
 from docstring_parser import parse
 from functools import wraps
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, create_model, BaseConfig
 from instructor.exceptions import IncompleteOutputException
 from openai.types.chat import ChatCompletion
 from instructor.mode import Mode
@@ -11,7 +11,79 @@ import logging
 T = TypeVar("T")
 
 logger = logging.getLogger("instructor")
+from loguru import logger as alogger
+# From json Schema handle validation downstream and also handle retries downstream
+class OpenAISchemaFromJson(BaseModel):
 
+
+    schema: Optional[Dict[str, Any]]
+    name: str
+
+    @property
+    def openai_schema(cls) -> Dict[str, Any]:
+        """
+        Return the schema in the format of OpenAI's schema as jsonschema
+
+        Note:
+            Its important to add a docstring to describe how to best use this class, it will be included in the description attribute and be part of the prompt.
+
+        Returns:
+            model_json_schema (dict): A dictionary in the format of OpenAI's schema as jsonschema
+        """
+        
+        schema = cls.schema
+        
+        docstring = parse(cls.__doc__ or "")
+        parameters = {
+            k: v for k, v in schema.items() if k not in ("title", "description")
+        }
+        for param in docstring.params:
+            if (name := param.arg_name) in parameters["properties"] and (
+                description := param.description
+            ):
+                if "description" not in parameters["properties"][name]:
+                    parameters["properties"][name]["description"] = description
+
+        parameters["required"] = sorted(
+            k for k, v in parameters["properties"].items() if "default" not in v
+        )
+
+        if "description" not in schema:
+            if docstring.short_description:
+                schema["description"] = docstring.short_description
+            else:
+                schema["description"] = (
+                    f"Correctly extracted `{cls.name}` with all "
+                    f"the required parameters with correct types"
+                )
+
+        return {
+            "name": schema["title"],
+            "description": schema["description"],
+            "parameters": parameters,
+        }
+    @classmethod
+    def from_response(
+        cls,
+        completion: ChatCompletion,
+        validation_context: Optional[Dict[str, Any]] = None,
+        strict: Optional[bool] = None,
+        mode: Mode = Mode.TOOLS,
+    ) -> str:
+        message = completion.choices[0].message
+
+        tool_call = message.tool_calls[0]  # type: ignore
+        # assert (
+        #         tool_call.function.name == cls.openai_schema["name"]  # type: ignore[index]
+        #     ), "Tool name does not match"
+        function_call = tool_call.function.arguments
+        alogger.info(function_call)
+        return function_call
+
+
+
+        
+   
 
 class OpenAISchema(BaseModel):  # type: ignore[misc]
     @classmethod  # type: ignore[misc]
@@ -26,7 +98,11 @@ class OpenAISchema(BaseModel):  # type: ignore[misc]
         Returns:
             model_json_schema (dict): A dictionary in the format of OpenAI's schema as jsonschema
         """
-        schema = cls.model_json_schema()
+        if not isinstance(cls, dict[str,any]):
+            schema = cls.model_json_schema()
+        else:
+            schema = cls.schema
+        
         docstring = parse(cls.__doc__ or "")
         parameters = {
             k: v for k, v in schema.items() if k not in ("title", "description")
@@ -56,7 +132,6 @@ class OpenAISchema(BaseModel):  # type: ignore[misc]
             "description": schema["description"],
             "parameters": parameters,
         }
-
     @classmethod
     def from_response(
         cls,
@@ -134,3 +209,19 @@ def openai_schema(cls: Type[BaseModel]) -> OpenAISchema:
             __base__=(cls, OpenAISchema),
         )
     )  # type: ignore[all]
+
+def openai_schema_from_json(json_schema: Dict[str, Any]) -> OpenAISchemaFromJson:
+    schema = json_schema
+    # Create openaiSchema with json_schame
+    class_name = json_schema['title']
+    # alogger.info(class_name)
+    # # Define a custom configuration class that allows arbitrary types
+    # class AllowArbitraryTypesConfig(BaseConfig):
+    #     arbitrary_types_allowed = True
+
+    # return OpenAISchemaFromJson(schema=schema, name=class_name)
+     # Define a custom configuration class that allows arbitrary types
+    return OpenAISchemaFromJson(schema=schema, name=class_name)
+    
+
+

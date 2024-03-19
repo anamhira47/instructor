@@ -17,6 +17,7 @@ typer = "^0.9.0"
 rich = "^13.7.0"
 aiohttp = "^3.9.1"
 tenacity = "^8.2.3"
+loguru = "^0.7.2"
 
 [tool.poetry.scripts]
 instructor = "instructor.cli.cli:app"
