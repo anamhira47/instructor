@@ -40,12 +40,14 @@ def is_simple_type(response_model) -> bool:
     if typing.get_origin(response_model) in {typing.Iterable, Partial}:
         # These are reserved for streaming types, would be nice to
         return False
-
+    if isinstance(response_model, dict):
+        return False
     if response_model in {
         str,
         int,
         float,
         bool,
+        
     }:
         return True
 

@@ -8,6 +8,8 @@ from typing import (
     TypeVar,
     Union,
     overload,
+    Dict,
+    Any,
 )
 
 from openai import AsyncOpenAI, OpenAI
@@ -114,7 +116,7 @@ def patch(
 
     @wraps(func)
     def new_create_sync(
-        response_model: Type[T_Model] = None,
+        response_model: Union[Type[T_Model], Dict[str, Any]] = None,
         validation_context: dict = None,
         max_retries: int = 1,
         *args: T_ParamSpec.args,
