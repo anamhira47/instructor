@@ -163,6 +163,8 @@ def process_response(
     if isinstance(model, AdapterBase):
         logger.debug(f"Returning model from AdapterBase")
         return model.content
+    if isinstance(model, str):
+        return model
 
     model._raw_response = response
     return model
